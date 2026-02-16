@@ -20,8 +20,8 @@ This project is a Python utility that validates Python source code using Pythonâ
 
   If parsing is successful:
 
-   Returns a cleaned version of the source code
+          Returns a cleaned version of the source code
 
 If parsing fails:
 
- Returns a clear syntax error message with location information
+          Returns a clear syntax error message with location information
