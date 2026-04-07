@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Code Reviewer</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root{
+--bg:#0d1117;
+--panel:#161b22;
+--border:#30363d;
+--text:#c9d1d9;
+--accent:#58a6ff;
+--success:#238636;
+--error:#da3633;
+--warning:#d29922;
+--ai-purple:#8957e5;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:Inter}
+header{
+padding:1.5rem 2rem;
+border-bottom:1px solid var(--border);
+display:flex;
+justify-content:space-between;
+background:#0d1117;
+}
+.logo{color:var(--accent);font-weight:600}
+.container{max-width:1200px;margin:2rem auto;padding:1rem}
+.workspace{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.panel{
+background:var(--panel);
+border:1px solid var(--border);
+border-radius:8px;
+display:flex;
+flex-direction:column;
+}
+.panel-header{
+padding:.7rem 1rem;
+background:#21262d;
+border-bottom:1px solid var(--border);
+font-weight:600;
+}
+textarea{
+height:400px;
+background:transparent;
+border:none;
+color:white;
+padding:1rem;
+font-family:"Fira Code";
+resize:none;
+outline:none;
+}
+.actions{padding:1rem;border-top:1px solid var(--border)}
+button{
+padding:.6rem 1.2rem;
+border:none;
+border-radius:6px;
+cursor:pointer;
+font-weight:600;
+}
+.btn-primary{background:var(--accent);color:white}
+.btn-secondary{background:#30363d;color:white}
+.output{padding:1rem;height:400px;overflow:auto}
+.step-card{
+margin-bottom:10px;
+padding:10px;
+border-left:4px solid #30363d;
+background:#0d1117;
+border-radius:6px;
+}
+.step-success{border-left-color:var(--success)}
+.step-error{border-left-color:var(--error)}
+.step-ai{border-left-color:var(--ai-purple)}
+.report-content{white-space:pre-wrap}
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="logo">🤖 AI Code Reviewer</div>
+</header>
+
+<div class="container">
+<div class="workspace">
+
+<!-- INPUT -->
+<div class="panel">
+<div class="panel-header">editor.py</div>
+
+<textarea id="codeInput" placeholder="Paste Python code here..."></textarea>
+
+<div class="actions">
+<button class="btn-primary" onclick="startReview()" id="reviewBtn">
+Review My Code
+</button>
+<button class="btn-secondary" onclick="clearEditor()">Clear</button>
+</div>
+</div>
+
+<!-- OUTPUT -->
+<div class="panel">
+<div class="panel-header">Review Report</div>
+
+<div class="output" id="outputBox">
+<div class="step-card">
+<strong>Welcome!</strong>
+<p>Paste code and click Review.</p>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+
+<script>
+
+async function startReview(){
+
+const code=document.getElementById("codeInput").value;
+const outputBox=document.getElementById("outputBox");
+const btn=document.getElementById("reviewBtn");
+
+if(!code.trim()){
+alert("Enter code first");
+return;
+}
+
+btn.innerText="Analyzing...";
+btn.disabled=true;
+
+outputBox.innerHTML=
+`<div class="step-card">
+<strong>Processing...</strong>
+<p>Parsing → Static Analysis → AI Review</p>
+</div>`;
+
+try{
+
+const response=await fetch("http://localhost:500http://localhost:5000/api/review0/api/review",{
+method:"POST",
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({code:code})
+});
+
+const data=await response.json();
+renderResults(data);
+
+}catch(error){
+
+outputBox.innerHTML=
+`<div class="step-card step-error">
+<strong>Connection Error</strong>
+<p>Start Flask server on port 5000</p>
+</div>`;
+
+}
+
+btn.innerText="Review My Code";
+btn.disabled=false;
+}
+
+function renderResults(data){
+
+const outputBox=document.getElementById("outputBox");
+outputBox.innerHTML="";
+
+const parseClass =
+data.parse.status==="success"
+? "step-success"
+: "step-error";
+
+outputBox.innerHTML+=`
+<div class="step-card ${parseClass}">
+<strong>Step 1: Parsing</strong>
+<p>${data.parse.message}</p>
+</div>`;
+
+if(data.parse.status==="error") return;
+
+const hasIssues=data.static.suggestions.length>0;
+
+outputBox.innerHTML+=`
+<div class="step-card ${hasIssues?"step-error":"step-success"}">
+<strong>Step 2: Static Analysis</strong>
+<p>${hasIssues
+? data.static.suggestions.join("<br>")
+: "No issues found"}
+</p>
+</div>`;
+
+outputBox.innerHTML+=`
+<div class="step-card step-ai">
+<strong>Step 3: AI Report</strong>
+<div class="report-content">
+${data.ai.report}
+</div>
+</div>`;
+}
+
+function clearEditor(){
+document.getElementById("codeInput").value="";
+document.getElementById("outputBox").innerHTML=
+`<div class="step-card">
+<strong>Editor cleared.</strong>
+</div>`;
+}
+
+</script>
+
+</body>
+</html>
