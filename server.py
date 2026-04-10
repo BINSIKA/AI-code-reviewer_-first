@@ -1,50 +1,121 @@
-import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from dotenv import load_dotenv
+"""
+server.py
+FastAPI REST API server — exposes the analysis pipeline as HTTP endpoints.
+Run with:  uvicorn server:app --reload --port 8000
+"""
 
-from code_parser import validate_and_parse
-from error_detector import analyze_code_errors
-from ai_suggester import AISuggester
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
+import sys, os
 
-load_dotenv()
+# Ensure project root is on the path
+sys.path.insert(0, os.path.dirname(__file__))
 
-app = Flask(__name__)
-CORS(app)
+from analyzer import run_full_analysis, run_chat
 
-@app.route("/api/review", methods=["POST"])
-def review_code():
-    data = request.get_json()
-    code = data.get("code", "")
+app = FastAPI(
+    title="AI Code Reviewer API",
+    description="REST API for static analysis + AI code review using Groq LLaMA",
+    version="1.0.0",
+)
 
-    if not code:
-        return jsonify({"error": "No code provided"}), 400
+# Allow Reflex frontend (localhost:3000) to call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    final_report = {}
 
-    parse_result = validate_and_parse(code)
-    if parse_result["status"] == "error":
-        return jsonify({
-            "parse": parse_result,
-            "static": {"suggestions": []},
-            "ai": {"report": "Parsing failed. Fix syntax errors to get AI feedback."}
-        })
-    
-    final_report["parse"] = {"status": "success", "message": parse_result["message"]}
-    static_analysis = analyze_code_errors(parse_result["tree"])
-    final_report["static"] = {"suggestions": static_analysis["suggestions"]}
+# ─────────────────────────────────────────
+#  Request / Response models
+# ─────────────────────────────────────────
+
+class AnalyzeRequest(BaseModel):
+    code: str
+    language: str = "python"
+
+
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[str] = ""
+    history: Optional[list] = []
+
+
+class AnalyzeResponse(BaseModel):
+    language: str
+    language_display: str
+    syntax_status: str
+    syntax_msg: str
+    unused_imports: list
+    unused_functions: list
+    unused_variables: list
+    style_violations: list
+    created_vars: list
+    used_vars: list
+    linter_tools: list
+    issues: list
+    issue_count: int
+    grade: str
+    summary: str
+    corrected_code: str
+    optimizations: list
+    detected_bugs: list
+
+
+# ─────────────────────────────────────────
+#  Endpoints
+# ─────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "AI Code Reviewer API is running."}
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+def analyze(req: AnalyzeRequest):
+    """
+    Run full analysis pipeline on submitted code.
+    Returns syntax, static, and AI results.
+    """
+    if not req.code or not req.code.strip():
+        raise HTTPException(status_code=400, detail="No code provided.")
 
     try:
-        suggester = AISuggester()
-        ai_feedback = suggester.get_suggestions(code, static_analysis["suggestions"])
-        final_report["ai"] = {"report": ai_feedback}
+        result = run_full_analysis(req.code, req.language)
+        return result
     except Exception as e:
-        final_report["ai"] = {"report": f"⚠️ AI Error: {str(e)}"}
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return jsonify(final_report)
 
+@app.post("/chat")
+def chat(req: ChatRequest):
+    """
+    Send a message to the AI assistant with analysis context.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Empty message.")
+
+    try:
+        reply = run_chat(req.message, req.context, req.history)
+        return {"reply": reply}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+
+# ─────────────────────────────────────────
+#  Dev run
+# ─────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("🚀 Backend running on http://0.0.0.0:5000")
-    app.run(host="0.0.0.0", port=5000, debug=True)
-
+    import uvicorn
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
